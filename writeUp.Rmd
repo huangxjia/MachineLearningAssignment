@@ -1,0 +1,110 @@
+# Qualitative Activity Recognition - Reproducing Test Results
+****
+
+## Background
+****
+This project is based on the study of [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf). The basic idea of this particular study was to extend the quantitative approach of Human Activity Recognition(HAR) to a qualitative one. Many of the current approaches are limited to distinguish the human activities from each other such as sleeping, walking and sitting. However, the case can be that it is not just the quantity that is of interest but also the quality of the exercise. The authors of the study do show this in the example of weight training (using the dumbell raises as an example), where:  
+1. the quantity of raises not necessarily represent the amount of exercise done  
+2. wrong application can lead to injuries
+
+The authors suggested a set to measure the movements with a specific sensor setup. And then instructed the test subject to simulate "good" and "bad" dumbell raises.    
+
+## Goal of this Draft
+****
+In this draft we work with the sensor data and use them to train and validate two modes based on:  
+1. Random Forests
+2. Recursive Partitioning and Regression Trees
+
+For this exercise we will be using the "caret" and "randomForest" packages available for r.
+
+```{r, echo = FALSE, results = "hide"}
+library(caret)
+library(randomForest)
+library(rpart)
+```
+  
+## Data Preparation
+****  
+The initial data cleaning occurs when loading the data:  
+1. Remove all columns that with zero variance  
+2. Remove all columns that contain mostly NAs  
+3. Remove all columns with non-numeric variables
+
+```{r, echo=TRUE}
+trainData <- read.csv("pml-training.csv")
+
+nzv <- nearZeroVar(trainData)
+trainData <- trainData[, -nzv]
+trainData <- trainData[, colSums(is.na(trainData)) < 0.95*nrow(trainData)]
+rem_col <- c("user_name", "cvtd_timestamp", "raw_timestamp_part_1", "raw_timestamp_part_2", "new_window", "X")
+trainData <- trainData[, !(names(trainData) %in% rem_col)]
+```
+
+We will devide the data into 5 folds.The intent is to use 2 folds for each model, Random Forests and Recursive Partitioning and Regression Trees. One fold of each will be used for training purpose and the second set for validation.
+
+```{r}
+set.seed(32323)
+folds <- createFolds(y = trainData$classe, k = 5, list = T, returnTrain = F)
+```
+  
+## Model Comparison
+****
+
+The first model we choose is Recursive Partitioning and Regression Trees. We use a described part of the training data for training purposes and another part for validation. Note that we kept all parameter for the train function default.
+```{r, cache = TRUE}
+modelRpart <- train(classe~., method = "rpart", data = trainData[folds[[3]], ])
+preRpart <- predict(modelRpart, trainData[folds[[4]],])
+confuRpart <- confusionMatrix(trainData[folds[[4]], ]$classe, preRpart)
+```
+
+Overall Accuracy Estimate for the RPART test:
+```{r, echo=FALSE}
+print("Accuracy:")
+round(sum(preRpart==trainData[folds[[4]], ]$classe)/length(preRpart),3)
+```
+
+Table of the Confusion Matrix for a Recursive Partitioning and Regression Trees. Note that the RPART model is particularuly flawed, when it comes to distinguishing the cases A, B and C. 
+
+```{r, echo = FALSE}
+confuRpart$table
+```
+
+The second model we choose is Random Forests. Again we use part of the training data for training purposes and another part for validation. Note that we kept all parameter for the train function default except for the fact that we enable parallel processing.
+
+```{r, echo = TRUE, cache = TRUE}
+modelRf <- randomForest(classe~., data = trainData[folds[[1]], ], ntree = 100, importance = FALSE)
+preRf <- predict(modelRf, trainData[folds[[2]], ])
+confuRf <- confusionMatrix(trainData[folds[[2]], ]$classe, preRf)
+```
+
+Overall Accuracy Estimate for the Random Forest test:
+```{r, echo = FALSE}
+print("Accuracy:")
+round(sum(preRf==trainData[folds[[2]], ]$classe)/length(preRf), 3)
+```
+
+Table of the confusionMatrix for the Random Forest run test.
+```{r, echo = FALSE}
+confuRf$table
+```
+  
+## Testing Data and Submission
+****
+As part of the exercise we were given a set of test data to varify our models
+
+```{r, echo=TRUE}
+testData <- read.csv("pml-testing.csv")
+colnames(testData)[160] <- "classe"
+testData <- testData[, names(testData)%in%names(trainData)]
+```
+
+Row one shows the predictive values of Recursive Partitioning and Regression trees and row two for Random Forests
+```{r, echo = FALSE}
+print(predict(modelRpart, testData))
+print(predict(modelRf, testData))
+```
+   
+**Submission results:**
+****
+- Recursive partitioning and regression trees get 10/20 correct;
+- Random Forests gets 20/20 corret.
